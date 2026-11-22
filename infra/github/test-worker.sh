@@ -14,6 +14,7 @@ docker buildx build --progress=plain --platform linux/amd64 \
 
 docker image inspect --format 'Local worker image: {{.Id}} ({{.Os}}/{{.Architecture}})' "$image"
 
+# The direct Node entrypoint needs the Lambda runtime identifiers to load Chromium libraries.
 docker run --rm -i --pull=never --platform linux/amd64 --network none \
   --env AWS_EXECUTION_ENV=AWS_Lambda_nodejs22.x \
   --env AWS_LAMBDA_FUNCTION_NAME=cloversight-worker-ci \
