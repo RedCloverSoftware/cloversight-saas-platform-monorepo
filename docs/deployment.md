@@ -136,17 +136,11 @@ npm run aws:deploy-web
 
 The script builds the public Astro site, writes the portals’ public Cognito configuration, publishes immutable assets before HTML, and waits for CloudFront invalidations.
 
-### Optional customer Cognito vanity-domain migration
+### Customer login and verification email
 
-The customer authorization endpoint can use `auth.<stage-domain>` instead of the AWS `amazoncognito.com` hostname. The ACM certificate must be in `us-east-1` and cover the auth hostname. `CLOUDFRONT_CERTIFICATE_ARN` is reused unless `COGNITO_CUSTOMER_CERTIFICATE_ARN` is set.
+New production installations use `auth.<stage-domain>` with the stage's verified SES domain. The primary deploy publishes DKIM records before it switches Cognito to SES. Production sending requires regional SES production access. Staging and beta can select these features explicitly.
 
-A new stack can start with `COGNITO_CUSTOMER_DOMAIN_MODE=custom`. An existing user pool already using the AWS prefix domain must use two infrastructure deployments because Cognito permits only one domain per pool:
-
-1. Set `COGNITO_CUSTOMER_DOMAIN_MODE=none` and run `npm run aws:deploy`. Do not run `aws:deploy-web` in this intermediate state.
-2. Wait until the stack is `UPDATE_COMPLETE`, set `COGNITO_CUSTOMER_DOMAIN_MODE=custom`, and run `npm run aws:deploy` again.
-3. Run `npm run aws:deploy-web` so customer runtime configuration points to the new domain.
-
-The stack creates the Route 53 alias for `auth.<stage-domain>` and the managed-login branding resource. Keep the former `COGNITO_CUSTOMER_DOMAIN_PREFIX` value in `.env`; it remains useful if a controlled rollback uses the same `none`, then `prefix`, sequence.
+For an installed production stack, follow the [branded login cutover](production-cognito.md). Existing prefix pools can keep their current sign-in path during the switch. GitHub releases preserve the installed domain and email settings.
 
 ## Activate SES receiving
 

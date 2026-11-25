@@ -4,7 +4,8 @@ const region = process.env.AWS_REGION || 'us-east-1';
 const certificateArn = required('WW_CERT_ARN');
 const stackName = required('WW_STACK_NAME');
 const aliases = [required('WW_PUBLIC_DOMAIN'), required('WW_LEGACY_CUSTOMER_DOMAIN'), required('WW_STEWARD_DOMAIN')].map((value) => value.toLowerCase());
-const customerCustomDomain = process.env.WW_CUSTOMER_COGNITO_MODE === 'custom' ? required('WW_CUSTOMER_COGNITO_DOMAIN').toLowerCase() : null;
+const domainMode = required('WW_CUSTOMER_COGNITO_MODE');
+const customerCustomDomain = ['custom', 'custom-with-prefix'].includes(domainMode) ? required('WW_CUSTOMER_COGNITO_DOMAIN').toLowerCase() : null;
 const customerCertificateArn = customerCustomDomain ? required('WW_CUSTOMER_COGNITO_CERT_ARN') : null;
 const workerImageUri = required('WW_WORKER_IMAGE_URI');
 
@@ -35,8 +36,16 @@ if (!allowedManifestTypes.has(imageDetails?.imageManifestMediaType)) {
 
 const currentStack = readStack(stackName, region);
 const ownedResources = stackResources(currentStack, region);
+const hasResource = id => ownedResources.some(item => item.LogicalResourceId === id && item.PhysicalResourceId);
+if (domainMode === 'custom' && hasResource('CustomerManagedLoginBranding')) {
+  throw new Error('Use custom-with-prefix to keep the existing app client branding while adding its custom hostname.');
+}
+if (['prefix', 'custom-with-prefix'].includes(domainMode) && hasResource('CustomerCustomManagedLoginBranding')) {
+  throw new Error('This installation already uses custom-only branding. Keep its installed custom mode.');
+}
 for (const [logicalPool, domain] of [
-  ['CustomerUserPool', customerCustomDomain || required('WW_CUSTOMER_COGNITO_PREFIX')],
+  ...(['prefix', 'custom-with-prefix'].includes(domainMode) ? [['CustomerUserPool', required('WW_CUSTOMER_COGNITO_PREFIX')]] : []),
+  ...(customerCustomDomain ? [['CustomerUserPool', customerCustomDomain]] : []),
   ['StewardUserPool', required('WW_STEWARD_COGNITO_PREFIX')],
 ]) {
   let description;
@@ -73,6 +82,10 @@ const existingDns = [
   ['PublicDnsA', aliases[0], 'A'], ['PublicDnsAaaa', aliases[0], 'AAAA'],
   ['CustomerDnsA', aliases[1], 'A'], ['CustomerDnsAaaa', aliases[1], 'AAAA'],
   ['StewardDnsA', aliases[2], 'A'], ['StewardDnsAaaa', aliases[2], 'AAAA'],
+  ...(customerCustomDomain ? [
+    ['CustomerCognitoDnsA', customerCustomDomain, 'A'],
+    ['CustomerCognitoDnsAaaa', customerCustomDomain, 'AAAA'],
+  ] : []),
   ['ReplyMxRecord', required('WW_REPLY_DOMAIN'), 'MX'],
   ['SesMailFromMx', `mail.${required('WW_STAGE_BASE_DOMAIN')}`, 'MX'],
   ['SesMailFromSpf', `mail.${required('WW_STAGE_BASE_DOMAIN')}`, 'TXT'],

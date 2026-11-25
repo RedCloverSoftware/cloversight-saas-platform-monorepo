@@ -5,7 +5,7 @@ Logical resources are conditional where noted; this is source inventory, not pro
 
 ## Primary control plane
 
-Source: `infra/cloudformation/webwatch.yaml`. 178 logical resources; 53 parameters; 58 outputs.
+Source: `infra/cloudformation/webwatch.yaml`. 178 logical resources; 54 parameters; 58 outputs.
 
 Services: ApiGatewayV2 (31), Budgets (3), CloudFront (13), CloudWatch (18), Cognito (10), DynamoDB (4), Events (1), IAM (7), KMS (2), Lambda (19), Logs (15), Route53 (15), S3 (10), SES (4), SNS (3), SQS (11), SecretsManager (4), WAFv2 (8).
 
@@ -52,7 +52,7 @@ Services: ApiGatewayV2 (31), Budgets (3), CloudFront (13), CloudWatch (18), Cogn
 | `CustomerUserPoolCustomDomain` | `AWS::Cognito::UserPoolDomain` | `UseCustomerCustomDomain` |
 | `StewardUserPoolDomain` | `AWS::Cognito::UserPoolDomain` | `always` |
 | `CustomerManagedLoginBranding` | `AWS::Cognito::ManagedLoginBranding` | `UseCustomerPrefixDomain` |
-| `CustomerCustomManagedLoginBranding` | `AWS::Cognito::ManagedLoginBranding` | `UseCustomerCustomDomain` |
+| `CustomerCustomManagedLoginBranding` | `AWS::Cognito::ManagedLoginBranding` | `UseCustomOnlyBranding` |
 | `StewardManagedLoginBranding` | `AWS::Cognito::ManagedLoginBranding` | `always` |
 | `EdgeIpv4Set` | `AWS::WAFv2::IPSet` | `IsStaging` |
 | `EdgeIpv6Set` | `AWS::WAFv2::IPSet` | `IsStaging` |

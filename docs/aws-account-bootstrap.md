@@ -30,14 +30,14 @@ Use the full `arn:aws:iam::…:role/…` returned by IAM, including its Identity
 
 The examples use `BASE_DOMAIN=cloversight.app`. For staging the scripts add `staging.` automatically. Pick a domain you control. Use its existing authoritative **public Route 53 hosted zone**, or create one and delegate it at the registrar. Save the zone ID without `/hostedzone/`. If staging runs in a separate AWS account, you can create and delegate the `staging.<base-domain>` child zone to that account. [Route 53 delegation](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/MigratingDNS.html) · [Delegating a child zone](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-routing-traffic-for-subdomains.html)
 
-In ACM **in `us-east-1` in the target account**, request a public certificate covering the names below. Choose DNS validation, publish the ACM CNAMEs and wait for **Issued**. Keep the validation records for renewal. The initial configuration uses Cognito’s hosted login with `COGNITO_CUSTOMER_DOMAIN_MODE=prefix`. [CloudFront certificate requirements](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cnames-and-https-requirements.html) · [ACM DNS validation](https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html)
+In ACM **in `us-east-1` in the target account**, request a public certificate covering the names below. Choose DNS validation, publish the ACM CNAMEs and wait for **Issued**. Keep the validation records for renewal. Production defaults to a custom customer sign-in host. Staging defaults to the AWS prefix. [CloudFront certificate requirements](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/cnames-and-https-requirements.html) · [ACM DNS validation](https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html)
 
 | Environment | Required CloudFront names with `BASE_DOMAIN=cloversight.app` |
 | --- | --- |
 | Staging | `staging.cloversight.app`, `login.staging.cloversight.app`, `stewards.staging.cloversight.app` |
-| Production | `cloversight.app`, `login.cloversight.app`, `stewards.cloversight.app` |
+| Production | `cloversight.app`, `login.cloversight.app`, `stewards.cloversight.app`, `auth.cloversight.app` (or a separate us-east-1 certificate for auth) |
 
-The customer portal lives at `/app/` on the public host. The legacy `login.` hostname still needs certificate coverage. A wildcard covers one label, so `*.cloversight.app` alone misses the apex and `stewards.staging.cloversight.app`. Include `auth.<stage-domain>` if you later choose custom Cognito login. CloudFormation creates the web aliases, SES domain identity, DKIM, mail and reply records. Resolve existing records or identities owned outside the stack before deploying.
+The customer portal lives at `/app/` on the public host. The legacy `login.` hostname still needs certificate coverage. A wildcard covers one label, so `*.cloversight.app` alone misses the apex and `stewards.staging.cloversight.app`. For a new production deployment set `COGNITO_CUSTOMER_DOMAIN_MODE=custom` and `COGNITO_EMAIL_DELIVERY=ses` if your copied environment file has older defaults. For staging with a branded login include `auth.staging.cloversight.app` on the certificate. CloudFormation creates the web aliases, SES domain identity, DKIM, mail and reply records. Resolve existing records or identities owned outside the stack before deploying.
 
 The default capture regions are `us-east-1,us-east-2,us-west-2,ca-central-1,eu-west-1`. Keep all five to offer five-region checks. A smaller installation requires at least three supported regions including `us-east-1`. Check Lambda headroom in **each** target region before the browser build:
 
@@ -77,6 +77,7 @@ Edit the existing assignments in `.env`. Keep `AWS_PROFILE=saas-admin` here beca
 | Setting | Staging | Production |
 | --- | --- | --- |
 | `STAGE` / `STACK_NAME` | `staging` / `webwatch-staging` | `prod` / `webwatch-prod` |
+| New pool login and email | `COGNITO_CUSTOMER_DOMAIN_MODE=prefix`, `COGNITO_EMAIL_DELIVERY=cognito` | `COGNITO_CUSTOMER_DOMAIN_MODE=custom`, `COGNITO_EMAIL_DELIVERY=ses`. Obtain regional SES production access before enabling public signups. |
 | Access | Put your real operator CIDRs in `.local/staging-ip-allowlist.txt`. Set `STAGING_CHATGPT_BROWSER_ENABLED=false` for IP-only access. Its default `true` also permits the documented, spoofable browser-header exception. | The staging WAF is absent. Set `COGNITO_STEWARD_MFA=ON` and prepare software-token enrollment. |
 | Alert destinations | Set `OPS_ALERT_EMAIL` and `BUDGET_ALERT_EMAIL` for exercised mail. If enabling app alerts, set `TECHNICAL_ALERTS_ENABLED=true` and your own `TECHNICAL_ALERT_EMAIL`. | Set `TECHNICAL_ALERTS_ENABLED=true` and explicitly set `TECHNICAL_ALERT_EMAIL` (app/SES), `OPS_ALERT_EMAIL` (SNS) and `BUDGET_ALERT_EMAIL` (Budgets). |
 | Stripe | `STRIPE_MODE=test` with objects from one Stripe sandbox. | `STRIPE_MODE=live` with live objects. For a deliberate sandbox trial on the production URL, use `test` and follow the [live cutover](stripe-production-test-0.5.20.md). |

@@ -139,6 +139,12 @@ Resources:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/webwatch-beta-*'
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/webwatch-prod-*'
                 Condition: { StringEquals: { 'iam:PassedToService': lambda.amazonaws.com } }
+              - Sid: CreateCognitoEmailServiceRole
+                Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/email.cognito-idp.amazonaws.com/AWSServiceRoleForAmazonCognitoIdpEmailService'
+                Condition:
+                  StringEquals: { iam:AWSServiceName: email.cognito-idp.amazonaws.com }
               - Sid: CreateServiceLinkedRolesWhenRequired
                 Effect: Allow
                 Action: iam:CreateServiceLinkedRole
@@ -272,6 +278,7 @@ Resources:
                   - ses:DescribeActiveReceiptRuleSet
                   - ses:DescribeReceiptRuleSet
                   - ses:GetIdentityVerificationAttributes
+                  - ses:GetAccount
                   - ses:GetSendQuota
                   - ses:GetSendStatistics
                   - ses:SetActiveReceiptRuleSet

@@ -78,3 +78,16 @@ test('Cognito domains owned by a preserved pool and explicitly absent domains ar
   data['cognito-idp describe-user-pool-domain cloversight-prod-steward'] = { error: 'An error occurred (ResourceNotFoundException)' };
   const result = run(data); assert.equal(result.status, 0, result.stderr);
 });
+
+test('adding a branded host preserves existing branding and checks the prefix, certificate and auth DNS', () => {
+  const env = { WW_CUSTOMER_COGNITO_MODE: 'custom-with-prefix', WW_CUSTOMER_COGNITO_DOMAIN: 'auth.cloversight.app', WW_CUSTOMER_COGNITO_CERT_ARN: `arn:aws:acm:us-east-1:${account}:certificate/test` };
+  const data = responses();
+  data['cloudformation describe-stacks'] = { Stacks: [{ StackId: stackId, StackStatus: 'UPDATE_COMPLETE' }] };
+  data['cloudformation list-stack-resources'].StackResourceSummaries = [{ LogicalResourceId: 'CustomerManagedLoginBranding', PhysicalResourceId: 'style', ResourceStatus: 'CREATE_COMPLETE' }];
+  assert.equal(run(data, env).status, 0);
+  assert.match(run(data, { ...env, WW_CUSTOMER_COGNITO_MODE: 'custom' }).stderr, /custom-with-prefix/);
+  data['route53 list-resource-record-sets'].ResourceRecordSets.push({ Name: 'auth.cloversight.app.', Type: 'CNAME' });
+  assert.match(run(data, env).stderr, /unmanaged.*auth\.cloversight/);
+  data['cognito-idp describe-user-pool-domain cloversight-prod-customer'] = { DomainDescription: { UserPoolId: 'other' } };
+  assert.match(run(data, env).stderr, /belongs to another user pool/);
+});
