@@ -296,7 +296,14 @@ assert unsubscribe_behavior.get('TargetOriginId') == 'ApiOrigin', 'Public unsubs
 assert unsubscribe_behavior.get('CachePolicyId') == 'ApiNoCachePolicy', 'Public unsubscribe responses must use the no-cache API policy.'
 assert resources.get('UnsubscribePageRoute', {}).get('Properties', {}).get('AuthorizationType') == 'NONE', 'Signed unsubscribe links must be available without Cognito authentication.'
 assert resources.get('CustomerUserPoolDomain', {}).get('Condition') == 'UseCustomerPrefixDomain', 'The legacy Cognito prefix domain must be selectable for safe migration.'
-assert resources.get('CustomerUserPoolCustomDomain', {}).get('Condition') == 'UseCustomerCustomDomain', 'The Cognito vanity domain must be selectable after the prefix-domain removal deployment.'
+assert resources.get('CustomerUserPoolCustomDomain', {}).get('Condition') == 'UseCustomerCustomDomain', 'The Cognito custom domain must be selectable for new and existing customer pools.'
+assert resources['CustomerManagedLoginBranding']['Condition'] == 'UseCustomerPrefixDomain'
+assert resources['CustomerCustomManagedLoginBranding']['Condition'] == 'UseCustomOnlyBranding'
+for pool in ('CustomerUserPool', 'StewardUserPool'):
+    mode, sender, fallback = resources[pool]['Properties']['EmailConfiguration']
+    assert mode == 'UseCognitoSes' and fallback == 'AWS::NoValue'
+    assert sender['EmailSendingAccount'] == 'DEVELOPER' and sender['SourceArn'].endswith(':identity/$' + '{SesDomainIdentity}')
+    assert sender['From'] == 'Cloversight <no-reply@$' + '{StageBaseDomain}>'
 ops_policy = resources.get('OpsTopicPolicy', {}).get('Properties', {}).get('PolicyDocument', {}).get('Statement', [])
 admin = next((item for item in ops_policy if item.get('Sid') == 'AccountAdministration'), {})
 actions = admin.get('Action', [])

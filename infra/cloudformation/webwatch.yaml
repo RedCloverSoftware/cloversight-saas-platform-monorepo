@@ -43,9 +43,8 @@ Parameters:
     AllowedPattern: '^[a-z0-9-]{1,63}$'
   CustomerCognitoDomainMode:
     Type: String
-    AllowedValues: [prefix, none, custom]
-    Default: prefix
-    Description: Use none as an intermediate deployment when migrating an existing pool from the AWS prefix domain to the custom domain.
+    AllowedValues: [prefix, none, custom, custom-with-prefix]
+    Description: Use custom for a new production pool or custom-with-prefix to add the branded host to an installed prefix pool.
   CustomerCognitoCustomDomain:
     Type: String
   CustomerCognitoCertificateArn:
@@ -84,6 +83,11 @@ Parameters:
     Type: CommaDelimitedList
     Default: 2001:0db8:0000:0000:0000:0000:0000:0001/128
     Description: Initial staging IPv6 CIDRs. Used only when EnableStagingIpv6=true.
+  CognitoEmailDelivery:
+    Type: String
+    AllowedValues: [cognito, ses]
+    Default: cognito
+    Description: Select ses after verifying the stage identity. The default preserves existing installations during a CI template update.
   SesFromAddress:
     Type: String
   SesReceiptRuleSetName:
@@ -250,8 +254,11 @@ Conditions:
   EnableViewerIpv6: !Or [!Equals [!Ref Stage, beta], !Equals [!Ref Stage, prod], !Equals [!Ref EnableStagingIpv6, 'true']]
   CustomerMfaEnabled: !Not [!Equals [!Ref CustomerMfa, 'OFF']]
   StewardMfaEnabled: !Not [!Equals [!Ref StewardMfa, 'OFF']]
-  UseCustomerPrefixDomain: !Equals [!Ref CustomerCognitoDomainMode, prefix]
-  UseCustomerCustomDomain: !Equals [!Ref CustomerCognitoDomainMode, custom]
+  KeepBothCustomerDomains: !Equals [!Ref CustomerCognitoDomainMode, custom-with-prefix]
+  UseCustomOnlyBranding: !Equals [!Ref CustomerCognitoDomainMode, custom]
+  UseCustomerPrefixDomain: !Or [!Equals [!Ref CustomerCognitoDomainMode, prefix], !Condition KeepBothCustomerDomains]
+  UseCustomerCustomDomain: !Or [!Condition UseCustomOnlyBranding, !Condition KeepBothCustomerDomains]
+  UseCognitoSes: !Equals [!Ref CognitoEmailDelivery, ses]
   UseCustomerCustomDomainWithIpv6: !And [!Condition UseCustomerCustomDomain, !Condition EnableViewerIpv6]
   EnableTechnicalAlerts: !Equals [!Ref TechnicalAlertsEnabled, 'true']
   DisableTechnicalAlerts: !Not [!Condition EnableTechnicalAlerts]
@@ -713,6 +720,12 @@ Resources:
       DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
       UsernameAttributes: [email]
       AutoVerifiedAttributes: [email]
+      EmailConfiguration: !If
+        - UseCognitoSes
+        - EmailSendingAccount: DEVELOPER
+          SourceArn: !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SesDomainIdentity}'
+          From: !Sub 'Cloversight <no-reply@${StageBaseDomain}>'
+        - !Ref 'AWS::NoValue'
       MfaConfiguration: !Ref CustomerMfa
       EnabledMfas: !If
         - CustomerMfaEnabled
@@ -736,6 +749,12 @@ Resources:
       DeletionProtection: !If [IsProd, ACTIVE, INACTIVE]
       UsernameAttributes: [email]
       AutoVerifiedAttributes: [email]
+      EmailConfiguration: !If
+        - UseCognitoSes
+        - EmailSendingAccount: DEVELOPER
+          SourceArn: !Sub 'arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/${SesDomainIdentity}'
+          From: !Sub 'Cloversight <no-reply@${StageBaseDomain}>'
+        - !Ref 'AWS::NoValue'
       MfaConfiguration: !Ref StewardMfa
       EnabledMfas: !If
         - StewardMfaEnabled
@@ -857,7 +876,7 @@ Resources:
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Cloversight</title><path fill="#F2B8CF" fill-rule="evenodd" d="M6 1H13L18 6V13L13 18H6L1 13V6ZM7 3L3 7V12L7 16H12L16 12V7L12 3Z"/><path fill="#D8538F" d="M10 14C7 14 5 12 5 10L4 7L6 8V4L8 6L9 3L11 6L13 5V8L15 7V11L13 13Z"/><path fill="#601350" d="M6 8L9 12L8 6L11 11L12 7V12L14 10L12 14H9Z"/><path fill="#F2B8CF" d="M8 9L10 12V8L11 12L13 10L11 14Z"/><path fill="#4E9A76" d="M5 14C8 15 11 15 13 13L16 16L24 22L22 24L13 17C9 18 6 16 5 14Z"/></svg>
   CustomerCustomManagedLoginBranding:
     Type: AWS::Cognito::ManagedLoginBranding
-    Condition: UseCustomerCustomDomain
+    Condition: UseCustomOnlyBranding
     DependsOn: CustomerUserPoolCustomDomain
     Properties:
       UserPoolId: !Ref CustomerUserPool

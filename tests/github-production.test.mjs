@@ -28,7 +28,19 @@ test('release uses installed topology and current image, without importing provi
   assert.equal(env.WORKER_ECR_REPOSITORY, 'example');
   assert.equal(env.CAPTURE_RESERVED_CONCURRENCY, '72');
   assert.equal(env.CLOVERSIGHT_EXISTING_RELEASE, '1');
+  assert.equal(env.COGNITO_CUSTOMER_DOMAIN_MODE, 'prefix');
+  assert.equal(env.COGNITO_EMAIL_DELIVERY, 'cognito');
   assert.ok(!Object.keys(env).some(k => k.startsWith('TWILIO') || k.startsWith('STRIPE') || k === 'STEWARD_OWNER_SUB'));
+});
+test('CI reconstructs installed custom login and SES settings for later releases', () => {
+  const { env } = productionContext((name, location) => {
+    const stack = fixture(name, location);
+    stack.Parameters.push({ ParameterKey: 'CustomerCognitoDomainMode', ParameterValue: 'custom-with-prefix' },
+      { ParameterKey: 'CognitoEmailDelivery', ParameterValue: 'ses' });
+    return stack;
+  });
+  assert.equal(env.COGNITO_CUSTOMER_DOMAIN_MODE, 'custom-with-prefix');
+  assert.equal(env.COGNITO_EMAIL_DELIVERY, 'ses');
 });
 test('fail before release if a configured region is absent, unstable, or owned by a different account or execution role', () => {
   for (const change of [() => null, s => ({ ...s, StackStatus: 'UPDATE_IN_PROGRESS' }),

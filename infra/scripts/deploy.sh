@@ -58,7 +58,8 @@ parameters=(
 
 deploy_stack_phase() {
   local lookup_enabled="$1" identity_enabled="$2" label="$3"
-  local -a overrides=("${parameters[@]}" "EnableLookupIndex=${lookup_enabled}" "EnableIdentityIndex=${identity_enabled}")
+  local email_delivery="${4:-$WW_COGNITO_EMAIL_DELIVERY}"
+  local -a overrides=("${parameters[@]}" "CognitoEmailDelivery=${email_delivery}" "EnableLookupIndex=${lookup_enabled}" "EnableIdentityIndex=${identity_enabled}")
   if [[ ${CLOVERSIGHT_EXISTING_RELEASE:-0} == 1 ]]; then
     overrides=("RuntimeArtifactKey=${ARTIFACT_KEY}" "WorkerImageUri=${WW_WORKER_IMAGE_URI}")
   fi
@@ -75,6 +76,29 @@ deploy_stack_phase() {
   failure_mode=rollback
 }
 
+require_cognito_ses_ready() {
+  if ! aws_active ses wait identity-exists --identities "$WW_STAGE_BASE_DOMAIN"; then
+    printf 'Wait for SES to verify %s in %s, then rerun aws:deploy.\n' "$WW_STAGE_BASE_DOMAIN" "$AWS_REGION" >&2
+    return 12
+  fi
+  if [[ "$WW_STAGE" == prod ]]; then
+    local allowed
+    allowed="$(aws_active sesv2 get-account --query 'SendingEnabled && ProductionAccessEnabled' --output json)"
+    [[ "$allowed" == true ]] || { echo 'Obtain SES production access and enable sending in the primary Region, then rerun aws:deploy.' >&2; return 12; }
+  fi
+}
+
+# A new install publishes the domain identity and DKIM records before Cognito
+# switches to SES. Subsequent CI releases preserve the installed mail mode.
+initial_mail="$WW_COGNITO_EMAIL_DELIVERY"
+if [[ "$initial_mail" == ses && ${CLOVERSIGHT_EXISTING_RELEASE:-0} != 1 ]]; then
+  if [[ "$failure_mode" == preserve ]]; then
+    identity_status="$(aws_active ses get-identity-verification-attributes --identities "$WW_STAGE_BASE_DOMAIN" --query 'VerificationAttributes.*.VerificationStatus | [0]' --output text)"
+    [[ "$identity_status" == Success ]] || initial_mail=cognito
+  fi
+  if [[ "$initial_mail" == ses ]]; then require_cognito_ses_ready; fi
+fi
+
 # DynamoDB accepts only one new GSI per UpdateTable operation. A brand-new
 # table may create both indexes at once, while an existing 0.4.x table needs a
 # completed LookupIndex phase before the final IdentityIndex phase.
@@ -82,8 +106,12 @@ if [[ -n "$existing_core_table" && "$existing_core_table" != None ]]; then
   existing_indexes=" $(aws_active dynamodb describe-table --table-name "$existing_core_table" --query 'Table.GlobalSecondaryIndexes[].IndexName' --output text | tr '\t\r\n' '   ') "
   if [[ " $existing_indexes " != *" LookupIndex "* && " $existing_indexes " != *" IdentityIndex "* ]]; then
     [[ ${CLOVERSIGHT_EXISTING_RELEASE:-0} != 1 ]] || { echo 'Finish the index migration before automated releases.' >&2; exit 12; }
-    deploy_stack_phase true false 'add LookupIndex to the existing table'
+    deploy_stack_phase true false 'add LookupIndex to the existing table' "$initial_mail"
   fi
+fi
+if [[ "$initial_mail" != "$WW_COGNITO_EMAIL_DELIVERY" ]]; then
+  deploy_stack_phase true true 'publish the SES identity and DNS records' "$initial_mail"
+  require_cognito_ses_ready
 fi
 deploy_stack_phase true true 'deploy the complete 0.5.22 stack'
 

@@ -5,7 +5,7 @@ import { CHECK_REGIONS, normalizeCheckRegions } from '../domain/regions.mjs';
 const DEFAULT_BASE_DOMAIN = 'cloversight.app';
 const DEFAULT_REGION = 'us-east-1';
 const MFA_VALUES = new Set(['OFF', 'OPTIONAL', 'ON']);
-const COGNITO_DOMAIN_MODES = new Set(['prefix', 'none', 'custom']);
+const COGNITO_DOMAIN_MODES = new Set(['prefix', 'none', 'custom', 'custom-with-prefix']);
 const DOC_IPV4 = ['192.0.2.', '198.51.100.', '203.0.113.'];
 
 function expandIpv6Cidr(value, lineNumber) {
@@ -184,11 +184,14 @@ export function loadDeploymentSettings(env = process.env) {
     throw new Error('WORKER_RESERVED_CONCURRENCY must be at least RESERVED_CHECK_CONCURRENCY + 2.');
   }
 
-  const customerCognitoDomainMode = String(env.COGNITO_CUSTOMER_DOMAIN_MODE || 'prefix').trim().toLowerCase();
-  if (!COGNITO_DOMAIN_MODES.has(customerCognitoDomainMode)) throw new Error('COGNITO_CUSTOMER_DOMAIN_MODE must be prefix, none, or custom.');
+  const customerCognitoDomainMode = String(env.COGNITO_CUSTOMER_DOMAIN_MODE || (domains.isProduction ? 'custom' : 'prefix')).trim().toLowerCase();
+  if (!COGNITO_DOMAIN_MODES.has(customerCognitoDomainMode)) throw new Error('COGNITO_CUSTOMER_DOMAIN_MODE must be prefix, none, custom, or custom-with-prefix.');
+  const customLogin = ['custom', 'custom-with-prefix'].includes(customerCognitoDomainMode);
+  const cognitoEmailDelivery = String(env.COGNITO_EMAIL_DELIVERY || (domains.isProduction ? 'ses' : 'cognito')).trim().toLowerCase();
+  if (!['cognito', 'ses'].includes(cognitoEmailDelivery)) throw new Error('COGNITO_EMAIL_DELIVERY must be cognito or ses.');
   const customerCognitoCertificateArn = env.COGNITO_CUSTOMER_CERTIFICATE_ARN || certificateArn;
-  if (customerCognitoDomainMode === 'custom' && !customerCognitoCertificateArn.startsWith(`arn:aws:acm:${region}:`)) throw new Error('COGNITO_CUSTOMER_CERTIFICATE_ARN must identify an ACM certificate in us-east-1.');
-  if (customerCognitoDomainMode === 'custom' && accountId && !customerCognitoCertificateArn.startsWith(`arn:aws:acm:${region}:${accountId}:certificate/`)) throw new Error('COGNITO_CUSTOMER_CERTIFICATE_ARN must belong to AWS_ACCOUNT_ID.');
+  if (customLogin && customerCognitoCertificateArn && !customerCognitoCertificateArn.startsWith(`arn:aws:acm:${region}:`)) throw new Error('COGNITO_CUSTOMER_CERTIFICATE_ARN must identify an ACM certificate in us-east-1.');
+  if (customLogin && customerCognitoCertificateArn && accountId && !customerCognitoCertificateArn.startsWith(`arn:aws:acm:${region}:${accountId}:certificate/`)) throw new Error('COGNITO_CUSTOMER_CERTIFICATE_ARN must belong to AWS_ACCOUNT_ID.');
 
   const stewardMfa = mfaSetting('COGNITO_STEWARD_MFA', env.COGNITO_STEWARD_MFA, domains.isProduction ? 'ON' : 'OFF');
   const technicalAlertsEnabled = parseBoolean(env.TECHNICAL_ALERTS_ENABLED, domains.isProduction);
@@ -232,6 +235,7 @@ export function loadDeploymentSettings(env = process.env) {
     allowlist: domains.isStaging ? readIpAllowlist(allowlistFile) : { ipv4: [], ipv6: [] },
     cognitoCustomerDomainPrefix: env.COGNITO_CUSTOMER_DOMAIN_PREFIX || defaultCognitoPrefix(accountId, domains.stage, 'customers'),
     customerCognitoDomainMode,
+    cognitoEmailDelivery,
     customerCognitoCertificateArn,
     cognitoStewardDomainPrefix: env.COGNITO_STEWARD_DOMAIN_PREFIX || defaultCognitoPrefix(accountId, domains.stage, 'stewards'),
     customerMfa: mfaSetting('COGNITO_CUSTOMER_MFA', env.COGNITO_CUSTOMER_MFA, 'OFF'),
@@ -276,8 +280,8 @@ export function requiredDeploymentValues(settings) {
     ARTIFACT_BUCKET: settings.artifactBucket,
     AWS_CLOUDFORMATION_EXECUTION_ROLE_ARN: settings.cloudFormationExecutionRoleArn,
     WORKER_IMAGE_URI: settings.workerImageUri,
-    COGNITO_CUSTOMER_DOMAIN_PREFIX: settings.customerCognitoDomainMode === 'prefix' ? settings.cognitoCustomerDomainPrefix : 'not-required',
-    COGNITO_CUSTOMER_CERTIFICATE_ARN: settings.customerCognitoDomainMode === 'custom' ? settings.customerCognitoCertificateArn : 'not-required',
+    COGNITO_CUSTOMER_DOMAIN_PREFIX: ['prefix', 'custom-with-prefix'].includes(settings.customerCognitoDomainMode) ? settings.cognitoCustomerDomainPrefix : 'not-required',
+    COGNITO_CUSTOMER_CERTIFICATE_ARN: ['custom', 'custom-with-prefix'].includes(settings.customerCognitoDomainMode) ? settings.customerCognitoCertificateArn : 'not-required',
     COGNITO_STEWARD_DOMAIN_PREFIX: settings.cognitoStewardDomainPrefix,
   };
   return Object.entries(required).filter(([, value]) => !String(value || '').trim()).map(([name]) => name);
