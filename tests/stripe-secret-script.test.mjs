@@ -22,6 +22,16 @@ test('production defaults to live Stripe and explicitly supports test mode', () 
   assert.throws(() => stripeSecretConfig(environment({ STRIPE_MODE: '' })), /sk_live_/);
   assert.throws(() => stripeSecretConfig(environment({ STRIPE_SECRET_KEY: 'sk_live_fixture' })), /sk_test_/);
 });
+test('restricted keys must match the selected mode and contain a key value', () => {
+  for (const mode of ['test', 'live']) {
+    const key = `rk_${mode}_fixture`;
+    assert.equal(stripeSecretConfig(environment({ STRIPE_MODE: mode, STRIPE_SECRET_KEY: key })).secretKey, key);
+    const opposite = mode === 'test' ? 'live' : 'test';
+    for (const invalid of [`rk_${opposite}_fixture`, `rk_${mode}_`, `pk_${mode}_fixture`]) {
+      assert.throws(() => stripeSecretConfig(environment({ STRIPE_MODE: mode, STRIPE_SECRET_KEY: invalid })), /STRIPE_SECRET_KEY/);
+    }
+  }
+});
 test('staging and beta remain test-only; malformed configuration never echoes credentials', () => {
   for (const STAGE of ['staging', 'beta']) {
     assert.equal(stripeSecretConfig(environment({ STAGE, STRIPE_MODE: '' })).mode, 'test');
@@ -33,7 +43,7 @@ test('staging and beta remain test-only; malformed configuration never echoes cr
 });
 test('catalog validation reads all six Prices using the chosen key and mode', async () => {
   for (const mode of ['test', 'live']) {
-    const config = stripeSecretConfig(environment({ STRIPE_MODE: mode, STRIPE_SECRET_KEY: `sk_${mode}_fixture` }));
+    const config = stripeSecretConfig(environment({ STRIPE_MODE: mode, STRIPE_SECRET_KEY: `rk_${mode}_fixture` }));
     const ids = [];
     await verifyStripeCatalog(config, async (url, options) => {
       assert.equal(options.method, 'GET'); assert.equal(options.redirect, 'error');
@@ -104,5 +114,14 @@ test('both secret-push entry points refuse default-prod test keys and wrong-mode
       assert.notEqual(result.status, 0); assert.equal(result.uploaded, null);
       assert.doesNotMatch(result.stdout + result.stderr, /sk_test_fixture|whsec_fixture/);
     }
+  }
+});
+test('both secret-push entry points upload a restricted key without logging it', () => {
+  for (const script of ['push-secrets.sh', 'push-stripe-secret.sh']) {
+    const key = 'rk_test_fixture';
+    const result = runPush(script, { STRIPE_SECRET_KEY: key });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.uploaded.secretKey, key);
+    assert.doesNotMatch(result.stdout + result.stderr, /rk_test_fixture|whsec_fixture/);
   }
 });
